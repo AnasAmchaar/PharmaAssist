@@ -75,6 +75,7 @@
   - Configured models: `OPENAI_MODEL='gpt-5.6-terra'`, `OPENAI_EMBEDDING_MODEL='text-embedding-3-small'`.
   - Values are quoted. `docker run --env-file` keeps quotes literally, so `config.py` strips one pair of matching quotes from every setting.
 - **Proxy capabilities (probed in Step 1):** chat, embeddings (1536-dim), `bind_tools` tool calls, structured output with both `json_schema` (langchain default, used) and `function_calling`, and `temperature=0` (set in `llm.py`) all work.
+- **Proxy limits (found in Step 2):** one embeddings request with all 528 chunks (~70k tokens) put the LiteLLM deployment into a 429 "cooldown" and the client hung on retry-after. `llm.py` now batches 64 inputs per request and sets timeouts; a cold index build takes ~25 s, a cached one ~0.3 s.
 - **Local Python/Tooling Quirks on Windows:**
   - `C:\msys64\ucrt64\bin\python.exe` is first on `PATH` and lacks `pip`. Always run Python tools via `uv run ...` (which uses CPython 3.12 in `.venv`).
 
@@ -153,13 +154,13 @@ PharmaAssist/
 - [x] ECC domain skills installed (see Section 1.3).
 - [x] Lint, tests, `/ponytail-review`, commit.
 
-### Step 2 — Hybrid In-Memory Retrieval (`retrieval.py`) *(NEXT)*
-- [ ] Implement markdown heading-aware chunker with canonical section mapping across DailyMed (Rx + OTC) and MedlinePlus formats.
-- [ ] Implement `HybridIndex` (numpy cosine + `BM25Okapi` + RRF + `drugs`/`sections` pre-filtering + `.cache/` numpy persistence).
-- [ ] Add `tests/test_retrieval.py` (unit tests with fake embeddings + live sanity check that `"warfarin contraindications"` ranks `dailymed-warfarin.md › 4 CONTRAINDICATIONS` first).
-- [ ] Lint, test, `/ponytail-review`, commit, wait for user approval.
+### Step 2 — Hybrid In-Memory Retrieval (`retrieval.py`) *(DONE)*
+- [x] Heading-aware chunker: 528 chunks (≤300 words, split on lines then sentences, since many label sections are one long line), canonical section from the `##` heading, `url` from the `Source:` line.
+- [x] `HybridIndex` (numpy cosine + `BM25Okapi` + RRF, BM25 zero-scores ignored, `drugs`/`sections` filters, `.cache/emb-<sha256(model + chunk texts)>.npy`, atomic write). `get_index()` singleton.
+- [x] `tests/test_retrieval.py`: unit (section mapping, chunking, filters, fusion index mapping, cache reuse) + live (warfarin contraindications top-1; all 4 eval questions retrieve their expected files in top-8).
+- [x] Lint, test, `/ponytail-review`, commit.
 
-### Step 3 — Schemas & Agent Tools (`schemas.py`, `tools.py`)
+### Step 3 — Schemas & Agent Tools (`schemas.py`, `tools.py`) *(NEXT)*
 - [ ] Define Pydantic models in `schemas.py` (`PatientProfile`, `PrescriptionItem`, `Issue`, `ValidationReport`, `DraftPrescription`, `Source`, `Plan`, `Critique`, `AskRequest`, `AskResponse`).
 - [ ] Implement `build_context(query, drugs=None, sections=None, k=6)` with `response_format="content_and_artifact"`.
 - [ ] Implement `validate_prescription(prescription, patient)`: out-of-corpus check at trust boundary + targeted multi-query retrieval (contraindications, dosage, warnings, interactions, renal/pregnancy/age, cross-drug interactions with `current_medications`) + grounded structured LLM evaluation.
