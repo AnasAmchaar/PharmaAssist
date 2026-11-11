@@ -89,7 +89,7 @@
                          |
                    (no tool_calls)
                          v
-                       critic --(revise & revisions < max_revisions)--> agent
+                       critic --(revise & revisions < MAX_REVISIONS)--> agent
                          |
               (approve or max reached)
                          v
@@ -97,7 +97,7 @@
    ```
 2. **Deterministic Citations (`content_and_artifact`):**
    - Tools return `(text_for_llm, artifact)` using LangChain's `response_format="content_and_artifact"`. `build_context`'s artifact is `list[Source]`; `validate_prescription` → `ValidationResult`, `write_prescription` → `DraftResult` (both have `.sources`).
-   - Citation keys are **chunk ids** (`[dailymed-warfarin.md#13]`), unique across tool calls, so no per-call `[S#]` numbering has to be merged. `AgentState.sources` merges artifacts by id; the finalizer renumbers cited ids to `[1]`, `[2]` and drops ids that were never retrieved.
+   - Citation keys are **chunk ids** (`[dailymed-warfarin.md#13]`), unique across tool calls, so no per-call `[S#]` numbering has to be merged. `collect_sources` merges ToolMessage artifacts by id; the finalizer renumbers cited ids to `[1]`, `[2]` and drops ids that were never retrieved.
    - The medical disclaimer is appended in code inside `finalizer`.
 3. **In-Memory Hybrid Retrieval (`retrieval.py`):**
    - Heading-aware markdown chunker preserving heading hierarchy (`Warfarin › 4 CONTRAINDICATIONS`) + canonical section tag (`indications | dosage | contraindications | warnings | interactions | adverse_reactions | specific_populations | pharmacology | overdose | other`).
@@ -126,7 +126,7 @@ PharmaAssist/
 │   ├── __init__.py
 │   ├── config.py             # Settings (handles OPENAI_BASE_URL + OPENAI_BASE_UR)
 │   ├── llm.py                # ChatOpenAI + OpenAIEmbeddings factories
-│   ├── schemas.py            # CorpusDrug/Section enums, PatientProfile, PrescriptionItem, Issue, ValidationReport, Draft*, Source (+ Plan/Critique in Step 4, Ask* in Step 5)
+│   ├── schemas.py            # CorpusDrug/Section enums, PatientProfile, PrescriptionItem, Issue, ValidationReport, Draft*, Source, Plan, Critique (+ Ask* in Step 5)
 │   ├── retrieval.py          # Markdown section chunker + HybridIndex (cosine + BM25 + RRF) + .cache
 │   ├── tools.py              # build_context, validate_prescription, write_prescription
 │   ├── agent.py              # LangGraph StateGraph (planner, agent, tools, critic, finalizer)
@@ -136,6 +136,7 @@ PharmaAssist/
     ├── test_config.py
     ├── test_retrieval.py
     ├── test_tools.py
+    ├── test_agent.py
     ├── test_api.py
     └── eval/run_eval.py
 ```
@@ -161,7 +162,7 @@ PharmaAssist/
 - [x] Lint, test, `/ponytail-review`, commit.
 
 ### Step 3 — Schemas & Agent Tools (`schemas.py`, `tools.py`) *(DONE)*
-- [x] `schemas.py`: models used by the tools only (`Plan`/`Critique` arrive in Step 4, `Ask*` in Step 5). `CorpusDrug` / `Section` enums are tested against the corpus.
+- [x] `schemas.py`: models used by the tools only (`Ask*` arrive in Step 5). `CorpusDrug` / `Section` enums are tested against the corpus.
 - [x] `build_context(query, drugs, sections, k)` → passages rendered as `[chunk-id] heading\ntext` + `list[Source]`.
 - [x] `validate_prescription` / `run_validation`: deterministic prechecks (out-of-corpus, documented allergy) → per-drug targeted retrieval (contraindications, dosing, renal, hepatic, pregnancy if not ruled out, age extremes, conditions/allergies, interactions **both directions** with current meds and co-prescribed drugs) → structured LLM review → invented citation ids dropped → **verdict computed in code** (critical → rejected; missing_info/out_of_corpus → needs_more_info; else approved[_with_warnings]). Unknown patient fields are "unknown, not normal" (fail closed, per `healthcare-cdss-patterns`).
 - [x] `write_prescription` / `run_draft`: indication + dosing retrieval → structured draft (corpus drugs only) → always validated.
@@ -169,13 +170,15 @@ PharmaAssist/
 - [x] Lint, test, `/ponytail-review` (fixed: empty prescription was approved; blank drug name matched every allergy), commit.
 - Note: hepatic status left unknown usually yields `needs_more_info` (labels of metformin/sertraline depend on it). Intended; the UI should make it easy to set.
 
-### Step 4 — LangGraph Agent (`agent.py`) *(NEXT)*
-- [ ] Build `StateGraph(AgentState)` with nodes: `planner`, `agent` (ReAct with `bind_tools`), `tools` (`ToolNode`), `critic`, `finalizer`.
-- [ ] Enforce loop guards (`max_revisions`, `recursion_limit`), deterministic `[S#]` → `[1..n]` citation renumbering, critic caveats preservation, and mandatory medical disclaimer.
-- [ ] Verify against all 4 public evaluation questions.
-- [ ] Lint, test, `/ponytail-review`, commit, wait for user approval.
+### Step 4 — LangGraph Agent (`agent.py`) *(DONE)*
+- [x] `StateGraph(AgentState)`: `planner` (structured `Plan`) → `agent` (`bind_tools(TOOLS)`, LLM picks tools) ⇄ `tools` (`ToolNode`, `handle_tool_errors=True`) → `critic` (structured `Critique`: unsupported claims, ambiguities, feedback) → `agent` (feedback as a HumanMessage) or `finalizer`. `ask(question)` returns the final state (`plan`, `messages`, `critique`, `revisions`, `answer`, `citations`).
+- [x] Loop guards are module constants: `MAX_TOOL_ROUNDS=8` (then `tool_choice="none"`), `MAX_REVISIONS=2`, `RECURSION_LIMIT=50` backstop. `GraphRecursionError` / LLM errors propagate: Step 5 must turn them into an error response/event.
+- [x] Sources are collected from ToolMessage artifacts (no reducer). `renumber_citations`: `[a.md#1, b.md#2]` → `[1][2]` in order of first use, unknown ids dropped, non-citation brackets kept. Finalizer appends reviewer notes (ambiguities; unverified claims if the revision budget ran out), a numbered **Sources** list (file + heading), and `DISCLAIMER` in code.
+- [x] Live: all 4 public questions cite their expected files (Q1 15s/0 revisions, Q2 32s/1, Q3 78s/2, Q4 13s/0).
+- [x] `tests/test_agent.py` (fake LLM: citation renumbering, tool → revise → finalize flow, revision budget flags claims, tool budget forces an answer; live: 4 eval questions). `FakeLLM`, `fake_llm` and `EVAL_QUESTIONS` live in `tests/conftest.py`.
+- [x] Lint, test, `/ponytail-review` (fixed: `max_revisions` setting nobody set could push runs past the recursion limit → constant), commit.
 
-### Step 5 — FastAPI Service (`api.py`)
+### Step 5 — FastAPI Service (`api.py`) *(NEXT)*
 - [ ] Implement `GET /health` (`200 {"status": "ok", "index_ready": bool}`), `POST /ask` (`AskRequest` → `AskResponse`), and `POST /ask/stream` (`fastapi.sse` events: `plan`, `tool_call`, `tool_result`, `review`, `final`, `error`).
 - [ ] Lifespan index warm-up, dev CORS, static Next.js mount at `/`.
 - [ ] Add `tests/test_api.py` (`TestClient` tests for `/health` and `/ask`).

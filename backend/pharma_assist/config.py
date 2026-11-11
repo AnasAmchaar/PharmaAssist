@@ -22,7 +22,6 @@ class Settings(BaseSettings):
 
     corpus_dir: Path = PROJECT_ROOT / "corpus"
     cache_dir: Path = PROJECT_ROOT / ".cache"
-    max_revisions: int = 2
 
     @field_validator("*", mode="before")
     @classmethod

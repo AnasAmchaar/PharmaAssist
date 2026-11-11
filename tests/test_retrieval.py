@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 from langchain_core.embeddings import DeterministicFakeEmbedding, Embeddings
 
+from conftest import EVAL_QUESTIONS
 from pharma_assist.retrieval import (
     MAX_WORDS,
     SECTIONS,
@@ -134,25 +135,6 @@ def test_missing_corpus_fails_clearly(tmp_path):
 
 
 # --- live: real embeddings through the proxy (`uv run pytest -m live`) ---
-
-EVAL_QUESTIONS = [
-    ("What are the main contraindications for warfarin?", {"dailymed-warfarin.md"}),
-    (
-        "Compare the contraindications of warfarin and apixaban. "
-        "What conditions are shared and which are unique to each drug?",
-        {"dailymed-warfarin.md", "dailymed-apixaban.md"},
-    ),
-    (
-        "A patient currently on warfarin is prescribed sertraline. "
-        "What is the risk of bleeding and what monitoring is recommended?",
-        {"dailymed-warfarin.md", "dailymed-sertraline.md"},
-    ),
-    (
-        "A patient with an eGFR of 25 mL/min is being considered for metformin. Is metformin "
-        "contraindicated at this level of renal function, and what is the threshold?",
-        {"dailymed-metformin.md"},
-    ),
-]
 
 
 @pytest.mark.live

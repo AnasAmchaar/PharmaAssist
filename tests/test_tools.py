@@ -14,33 +14,6 @@ from pharma_assist.schemas import (
 )
 
 
-class FakeLLM:
-    """Stands in for ChatOpenAI: returns queued structured outputs and records the prompts."""
-
-    def __init__(self, *outputs):
-        self.outputs = list(outputs)
-        self.calls = []
-
-    def with_structured_output(self, schema):
-        return self
-
-    def invoke(self, messages):
-        self.calls.append(messages)
-        return self.outputs.pop(0)  # IndexError = an unexpected LLM call
-
-
-@pytest.fixture
-def fake_llm(monkeypatch, fake_index):
-    monkeypatch.setattr(tools, "get_index", lambda: fake_index)
-
-    def install(*outputs):
-        llm = FakeLLM(*outputs)
-        monkeypatch.setattr(tools, "get_chat_model", lambda: llm)
-        return llm
-
-    return install
-
-
 def call(tool, args):
     """Invoke like the agent's ToolNode does, so content *and* artifact come back."""
     return tool.invoke({"type": "tool_call", "id": "t1", "name": tool.name, "args": args})

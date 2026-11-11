@@ -125,3 +125,21 @@ class DraftResult(BaseModel):
     draft: DraftPrescription
     validation: ValidationReport | None  # None when nothing could be drafted
     sources: list[Source]
+
+
+class Plan(BaseModel):
+    steps: list[str] = Field(description="1-4 short sub-questions or actions, in order")
+
+
+class Critique(BaseModel):
+    verdict: Literal["approve", "revise"]
+    unsupported_claims: list[str] = Field(
+        default_factory=list,
+        description="Claims in the draft that no cited passage supports, or that cite the wrong passage",
+    )
+    ambiguities: list[str] = Field(
+        default_factory=list,
+        description="Clinically ambiguous or conditional points the reader must know (e.g. the label says "
+        "'consider' or 'monitor', sources disagree, or the answer depends on unknown patient data)",
+    )
+    feedback: str = Field("", description="What the writer must fix, if revising")
