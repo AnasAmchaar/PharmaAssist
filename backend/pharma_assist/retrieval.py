@@ -2,8 +2,8 @@
 
 import hashlib
 import re
+import threading
 from dataclasses import dataclass
-from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
@@ -203,9 +203,19 @@ class HybridIndex:
         return [(self.chunks[candidates[i]], float(fused[i])) for i in top]
 
 
-@lru_cache(maxsize=1)
+_index: HybridIndex | None = None
+_index_lock = threading.Lock()
+
+
 def get_index() -> HybridIndex:
-    # shortcut: lru_cache is not a lock; two threads racing on first use may both build. The API
-    # lifespan (Step 5) warms this once at startup, so requests never race on it.
-    s = get_settings()
-    return HybridIndex(load_corpus(s.corpus_dir), get_embeddings(), s.cache_dir)
+    """Process-wide index, built once. The lock makes concurrent first callers wait for one build."""
+    global _index
+    with _index_lock:
+        if _index is None:
+            s = get_settings()
+            _index = HybridIndex(load_corpus(s.corpus_dir), get_embeddings(), s.cache_dir)
+    return _index
+
+
+def index_ready() -> bool:
+    return _index is not None

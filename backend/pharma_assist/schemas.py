@@ -1,8 +1,8 @@
 """Pydantic models shared by tools, agent and API."""
 
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 # The 10 corpus drugs (generic names, as in the corpus file names). Tested against `corpus/`.
 CorpusDrug = Literal[
@@ -44,6 +44,9 @@ class Source(BaseModel):
     text: str
 
 
+ShortText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
+
+
 class PatientProfile(BaseModel):
     """What is known about the patient. `None` means unknown (not normal); validation flags it if needed."""
 
@@ -54,11 +57,14 @@ class PatientProfile(BaseModel):
     hepatic_impairment: Literal["none", "mild", "moderate", "severe"] | None = None
     pregnant: bool | None = None
     breastfeeding: bool | None = None
-    conditions: list[str] = Field(
-        default_factory=list, description="e.g. 'atrial fibrillation', 'peptic ulcer'"
+    # Bounded (trust boundary): each entry adds prompt text, and each current medication adds 2 retrievals.
+    conditions: list[ShortText] = Field(
+        default_factory=list, max_length=20, description="e.g. 'atrial fibrillation', 'peptic ulcer'"
     )
-    allergies: list[str] = Field(default_factory=list)
-    current_medications: list[str] = Field(default_factory=list, description="Generic names")
+    allergies: list[ShortText] = Field(default_factory=list, max_length=20)
+    current_medications: list[ShortText] = Field(
+        default_factory=list, max_length=20, description="Generic names"
+    )
 
 
 class PrescriptionItem(BaseModel):
@@ -143,3 +149,22 @@ class Critique(BaseModel):
         "'consider' or 'monitor', sources disagree, or the answer depends on unknown patient data)",
     )
     feedback: str = Field("", description="What the writer must fix, if revising")
+
+
+class AskRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    question: str = Field(min_length=1, max_length=4000)
+    patient: PatientProfile | None = Field(
+        None, description="Optional structured patient details, passed to the agent with the question"
+    )
+
+
+class AskResponse(BaseModel):
+    answer: str = Field(description="Markdown answer with [n] citations, sources list and disclaimer")
+    citations: list[Source] = Field(description="citations[n-1] is the passage behind [n]")
+    plan: list[str]
+    review: Critique | None = None
+    revisions: int = 0
+    validation: ValidationReport | None = Field(None, description="Latest prescription check, if any")
+    draft: DraftPrescription | None = Field(None, description="Latest drafted prescription, if any")

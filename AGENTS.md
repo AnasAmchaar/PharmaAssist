@@ -126,7 +126,7 @@ PharmaAssist/
 │   ├── __init__.py
 │   ├── config.py             # Settings (handles OPENAI_BASE_URL + OPENAI_BASE_UR)
 │   ├── llm.py                # ChatOpenAI + OpenAIEmbeddings factories
-│   ├── schemas.py            # CorpusDrug/Section enums, PatientProfile, PrescriptionItem, Issue, ValidationReport, Draft*, Source, Plan, Critique (+ Ask* in Step 5)
+│   ├── schemas.py            # CorpusDrug/Section enums, PatientProfile, PrescriptionItem, Issue, ValidationReport, Draft*, Source, Plan, Critique, AskRequest/AskResponse
 │   ├── retrieval.py          # Markdown section chunker + HybridIndex (cosine + BM25 + RRF) + .cache
 │   ├── tools.py              # build_context, validate_prescription, write_prescription
 │   ├── agent.py              # LangGraph StateGraph (planner, agent, tools, critic, finalizer)
@@ -162,7 +162,7 @@ PharmaAssist/
 - [x] Lint, test, `/ponytail-review`, commit.
 
 ### Step 3 — Schemas & Agent Tools (`schemas.py`, `tools.py`) *(DONE)*
-- [x] `schemas.py`: models used by the tools only (`Ask*` arrive in Step 5). `CorpusDrug` / `Section` enums are tested against the corpus.
+- [x] `schemas.py`: models used by the tools. `CorpusDrug` / `Section` enums are tested against the corpus.
 - [x] `build_context(query, drugs, sections, k)` → passages rendered as `[chunk-id] heading\ntext` + `list[Source]`.
 - [x] `validate_prescription` / `run_validation`: deterministic prechecks (out-of-corpus, documented allergy) → per-drug targeted retrieval (contraindications, dosing, renal, hepatic, pregnancy if not ruled out, age extremes, conditions/allergies, interactions **both directions** with current meds and co-prescribed drugs) → structured LLM review → invented citation ids dropped → **verdict computed in code** (critical → rejected; missing_info/out_of_corpus → needs_more_info; else approved[_with_warnings]). Unknown patient fields are "unknown, not normal" (fail closed, per `healthcare-cdss-patterns`).
 - [x] `write_prescription` / `run_draft`: indication + dosing retrieval → structured draft (corpus drugs only) → always validated.
@@ -178,13 +178,17 @@ PharmaAssist/
 - [x] `tests/test_agent.py` (fake LLM: citation renumbering, tool → revise → finalize flow, revision budget flags claims, tool budget forces an answer; live: 4 eval questions). `FakeLLM`, `fake_llm` and `EVAL_QUESTIONS` live in `tests/conftest.py`.
 - [x] Lint, test, `/ponytail-review` (fixed: `max_revisions` setting nobody set could push runs past the recursion limit → constant), commit.
 
-### Step 5 — FastAPI Service (`api.py`) *(NEXT)*
-- [ ] Implement `GET /health` (`200 {"status": "ok", "index_ready": bool}`), `POST /ask` (`AskRequest` → `AskResponse`), and `POST /ask/stream` (`fastapi.sse` events: `plan`, `tool_call`, `tool_result`, `review`, `final`, `error`).
-- [ ] Lifespan index warm-up, dev CORS, static Next.js mount at `/`.
-- [ ] Add `tests/test_api.py` (`TestClient` tests for `/health` and `/ask`).
-- [ ] Lint, test, `/ponytail-review`, commit, wait for user approval.
+### Step 5 — FastAPI Service (`api.py`) *(DONE)*
+- [x] `GET /health` → `200 {"status": "ok", "index_ready": bool}` (always 200, even during warm-up).
+- [x] `POST /ask`: `AskRequest {question (1-4000 chars, stripped), patient?: PatientProfile}` → `AskResponse {answer, citations, plan, review, revisions, validation?, draft?}`. The patient is appended to the question as JSON (`null = unknown`); `validation`/`draft` come from the latest `validate_prescription`/`write_prescription` artifact (for UI badges). Agent failure → `502` with a generic message (details only in the server log); bad input → `422`.
+- [x] `POST /ask/stream` (`fastapi.sse.EventSourceResponse`, sync generator run in a threadpool, 15 s `: ping` keep-alives): `plan {steps}` → `tool_call {calls:[{name,args}]}` → `tool_result {name,status,source_ids,verdict}` → `review {verdict,unsupported_claims,ambiguities,feedback,revising}` (per critic pass) → `final` (AskResponse) or `error {message}`. Uses `graph.stream(stream_mode=["updates","values"])`.
+- [x] Lifespan starts index warm-up in a background thread; `retrieval.get_index()` is now a locked singleton (`index_ready()`), so requests during warm-up wait for the one build. Dev CORS for `http://localhost:3000`. Static mount of `frontend/out` at `/` only if the directory exists (verify in Steps 6/7).
+- [x] `PatientProfile` lists bounded (≤20 items, ≤200 chars, no blanks): each current medication adds 2 retrievals per prescribed drug. The UI must drop empty entries.
+- [x] `tests/test_api.py` (real graph + tools on the fake LLM/index: health, cited answer + patient passthrough, 422 cases, 502 without details, SSE event order + validation verdict, SSE error event). Live server check: `/ask` eval Q4 with patient → 22 s; stream eval Q3 → 54 s; validate sertraline + warfarin → 85 s, `approved_with_warnings`.
+- [x] Lint, test, `/ponytail-review` (fixed: unbounded patient lists at the trust boundary), commit.
+- Run locally: `uv run uvicorn pharma_assist.api:app --port 8000`.
 
-### Step 6 — Next.js Frontend (`frontend/`)
+### Step 6 — Next.js Frontend (`frontend/`) *(NEXT)*
 - [ ] Scaffold Next.js App Router + TypeScript + Tailwind with `output: "export"`.
 - [ ] Single page with tabs `Ask · Validate · Write`, structured `PatientProfile` form, example question chips, live SSE agent trace, severity-colored validation badges, and clickable citations.
 - [ ] Verify `npm run build` and `npm run lint`.
