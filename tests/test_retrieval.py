@@ -2,7 +2,6 @@ import numpy as np
 import pytest
 from langchain_core.embeddings import DeterministicFakeEmbedding, Embeddings
 
-from pharma_assist.config import PROJECT_ROOT
 from pharma_assist.retrieval import (
     MAX_WORDS,
     SECTIONS,
@@ -14,13 +13,6 @@ from pharma_assist.retrieval import (
     get_index,
     load_corpus,
 )
-
-CORPUS = PROJECT_ROOT / "corpus"
-
-
-@pytest.fixture(scope="module")
-def chunks():
-    return load_corpus(CORPUS)
 
 
 @pytest.mark.parametrize(
@@ -79,11 +71,6 @@ def test_corpus_chunks(chunks):
     # Every Rx label's contraindications section is tagged, e.g. the metformin eGFR threshold.
     metformin = [c for c in chunks if c.file == "dailymed-metformin.md" and c.section == "contraindications"]
     assert any("eGFR below 30" in c.text for c in metformin)
-
-
-@pytest.fixture(scope="module")
-def fake_index(chunks, tmp_path_factory):
-    return HybridIndex(chunks, DeterministicFakeEmbedding(size=32), tmp_path_factory.mktemp("cache"))
 
 
 def test_search_filters(fake_index):

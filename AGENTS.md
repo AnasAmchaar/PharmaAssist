@@ -96,8 +96,8 @@
                      finalizer -> END
    ```
 2. **Deterministic Citations (`content_and_artifact`):**
-   - Tools return `(text_for_llm, list[Source])` using LangChain's `response_format="content_and_artifact"`.
-   - `AgentState.sources` merges artifacts by chunk ID so citations in the final answer are mapped from actually retrieved corpus chunks (`[S1]`, `[S2]` → renumbered `[1]`, `[2]`), never hallucinated.
+   - Tools return `(text_for_llm, artifact)` using LangChain's `response_format="content_and_artifact"`. `build_context`'s artifact is `list[Source]`; `validate_prescription` → `ValidationResult`, `write_prescription` → `DraftResult` (both have `.sources`).
+   - Citation keys are **chunk ids** (`[dailymed-warfarin.md#13]`), unique across tool calls, so no per-call `[S#]` numbering has to be merged. `AgentState.sources` merges artifacts by id; the finalizer renumbers cited ids to `[1]`, `[2]` and drops ids that were never retrieved.
    - The medical disclaimer is appended in code inside `finalizer`.
 3. **In-Memory Hybrid Retrieval (`retrieval.py`):**
    - Heading-aware markdown chunker preserving heading hierarchy (`Warfarin › 4 CONTRAINDICATIONS`) + canonical section tag (`indications | dosage | contraindications | warnings | interactions | adverse_reactions | specific_populations | pharmacology | overdose | other`).
@@ -126,7 +126,7 @@ PharmaAssist/
 │   ├── __init__.py
 │   ├── config.py             # Settings (handles OPENAI_BASE_URL + OPENAI_BASE_UR)
 │   ├── llm.py                # ChatOpenAI + OpenAIEmbeddings factories
-│   ├── schemas.py            # PatientProfile, PrescriptionItem, ValidationReport, Plan, Critique, Source, Ask*
+│   ├── schemas.py            # CorpusDrug/Section enums, PatientProfile, PrescriptionItem, Issue, ValidationReport, Draft*, Source (+ Plan/Critique in Step 4, Ask* in Step 5)
 │   ├── retrieval.py          # Markdown section chunker + HybridIndex (cosine + BM25 + RRF) + .cache
 │   ├── tools.py              # build_context, validate_prescription, write_prescription
 │   ├── agent.py              # LangGraph StateGraph (planner, agent, tools, critic, finalizer)
@@ -160,15 +160,16 @@ PharmaAssist/
 - [x] `tests/test_retrieval.py`: unit (section mapping, chunking, filters, fusion index mapping, cache reuse) + live (warfarin contraindications top-1; all 4 eval questions retrieve their expected files in top-8).
 - [x] Lint, test, `/ponytail-review`, commit.
 
-### Step 3 — Schemas & Agent Tools (`schemas.py`, `tools.py`) *(NEXT)*
-- [ ] Define Pydantic models in `schemas.py` (`PatientProfile`, `PrescriptionItem`, `Issue`, `ValidationReport`, `DraftPrescription`, `Source`, `Plan`, `Critique`, `AskRequest`, `AskResponse`).
-- [ ] Implement `build_context(query, drugs=None, sections=None, k=6)` with `response_format="content_and_artifact"`.
-- [ ] Implement `validate_prescription(prescription, patient)`: out-of-corpus check at trust boundary + targeted multi-query retrieval (contraindications, dosage, warnings, interactions, renal/pregnancy/age, cross-drug interactions with `current_medications`) + grounded structured LLM evaluation.
-- [ ] Implement `write_prescription(description, patient=None)`: retrieve indications/dosage → structured draft (corpus drugs only) → auto-call `validate_prescription` → return draft + validation report.
-- [ ] Add `tests/test_tools.py` (unit tests with fake LLM + live check on metformin eGFR 25 and warfarin + sertraline).
-- [ ] Lint, test, `/ponytail-review`, commit, wait for user approval.
+### Step 3 — Schemas & Agent Tools (`schemas.py`, `tools.py`) *(DONE)*
+- [x] `schemas.py`: models used by the tools only (`Plan`/`Critique` arrive in Step 4, `Ask*` in Step 5). `CorpusDrug` / `Section` enums are tested against the corpus.
+- [x] `build_context(query, drugs, sections, k)` → passages rendered as `[chunk-id] heading\ntext` + `list[Source]`.
+- [x] `validate_prescription` / `run_validation`: deterministic prechecks (out-of-corpus, documented allergy) → per-drug targeted retrieval (contraindications, dosing, renal, hepatic, pregnancy if not ruled out, age extremes, conditions/allergies, interactions **both directions** with current meds and co-prescribed drugs) → structured LLM review → invented citation ids dropped → **verdict computed in code** (critical → rejected; missing_info/out_of_corpus → needs_more_info; else approved[_with_warnings]). Unknown patient fields are "unknown, not normal" (fail closed, per `healthcare-cdss-patterns`).
+- [x] `write_prescription` / `run_draft`: indication + dosing retrieval → structured draft (corpus drugs only) → always validated.
+- [x] `tests/test_tools.py`: fake-LLM unit tests (verdict rules, allergy precheck, out-of-corpus skips LLM, citation filtering, bidirectional interaction retrieval, draft auto-validation) + live (metformin eGFR 25 rejected citing the metformin label; sertraline + warfarin interaction flagged; T2D draft → metformin).
+- [x] Lint, test, `/ponytail-review` (fixed: empty prescription was approved; blank drug name matched every allergy), commit.
+- Note: hepatic status left unknown usually yields `needs_more_info` (labels of metformin/sertraline depend on it). Intended; the UI should make it easy to set.
 
-### Step 4 — LangGraph Agent (`agent.py`)
+### Step 4 — LangGraph Agent (`agent.py`) *(NEXT)*
 - [ ] Build `StateGraph(AgentState)` with nodes: `planner`, `agent` (ReAct with `bind_tools`), `tools` (`ToolNode`), `critic`, `finalizer`.
 - [ ] Enforce loop guards (`max_revisions`, `recursion_limit`), deterministic `[S#]` → `[1..n]` citation renumbering, critic caveats preservation, and mandatory medical disclaimer.
 - [ ] Verify against all 4 public evaluation questions.
