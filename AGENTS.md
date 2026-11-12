@@ -188,13 +188,15 @@ PharmaAssist/
 - [x] Lint, test, `/ponytail-review` (fixed: unbounded patient lists at the trust boundary), commit.
 - Run locally: `uv run uvicorn pharma_assist.api:app --port 8000`.
 
-### Step 6 — Next.js Frontend (`frontend/`) *(NEXT)*
-- [ ] Scaffold Next.js App Router + TypeScript + Tailwind with `output: "export"`.
-- [ ] Single page with tabs `Ask · Validate · Write`, structured `PatientProfile` form, example question chips, live SSE agent trace, severity-colored validation badges, and clickable citations.
-- [ ] Verify `npm run build` and `npm run lint`.
-- [ ] `/ponytail-review`, commit, wait for user approval.
+### Step 6 — Next.js Frontend (`frontend/`) *(DONE)*
+- [x] `create-next-app@16.4.6` (App Router, TypeScript, Tailwind 4, ESLint, `--empty`); all npm deps pinned exactly + `package-lock.json`; `output: "export"` → `frontend/out/` (mounted by FastAPI at `/`).
+- [x] One client page, tabs `Ask · Validate · Write` (ARIA tablist, arrow keys). Every tab goes through the agent via `POST /ask/stream` (`lib/api.ts`: SSE parsed from `fetch`, 422 details shown per field, abort/cancel). Validate/Write build a question from the prescription rows / description; the shared `PatientForm` (empty = unknown, blank list entries dropped) is sent as `patient`, and the Ask tab says when it is included.
+- [x] Live trace (plan, tool calls with args, tool results with verdict badges, critic passes), severity-colored validation card, draft table, answer rendered by `components/Markdown.tsx` (headings, lists, tables, bold/italic; `[n]` → button that opens + scrolls to the cited passage; no HTML injection), cited passages with "Open original label".
+- [x] Verified: `npm run lint`, `tsc`, `npm run build`, `npm audit --omit=dev` (0). Headless Chrome (puppeteer-core in the scratchpad only) against `uvicorn` serving `out/`: Ask eval Q4 (trace streams, citation [1] opens its passage, disclaimer shown), Validate metformin eGFR 25 → Rejected/CRITICAL, Write T2D → metformin draft + Needs more information (136 s), 390 px width without horizontal scroll, no console errors.
+- [x] `/ponytail-review` (fixed: patient details from another tab were sent silently with Ask questions; favicon 404), commit.
+- Note: no JS unit-test runner (would be a new dependency); the markdown renderer is covered by the browser run only. Latency: Validate/Write take 1-2+ min (agent adds its own searches and critic revisions) — tune in Step 8 if needed.
 
-### Step 7 — Single-Container Docker Build (`Dockerfile`)
+### Step 7 — Single-Container Docker Build (`Dockerfile`) *(NEXT)*
 - [ ] Write multi-stage `Dockerfile` (`node:22-alpine` → `python:3.12-slim` with `uv`).
 - [ ] Verify exact grader command: `docker build -t agent . && docker run -p 8000:8000 --env-file .env agent`, test `GET /health`, `POST /ask`, and UI on `http://localhost:8000`.
 - [ ] `/ponytail-review`, commit, wait for user approval.
