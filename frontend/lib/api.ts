@@ -1,19 +1,6 @@
 // Types mirror backend/pharma_assist/schemas.py; the client streams POST /ask/stream (SSE over fetch,
 // since EventSource cannot POST).
 
-export const CORPUS_DRUGS = [
-  "acetaminophen",
-  "albuterol",
-  "amoxicillin",
-  "apixaban",
-  "aspirin",
-  "atorvastatin",
-  "ibuprofen",
-  "metformin",
-  "sertraline",
-  "warfarin",
-] as const;
-
 export type Patient = {
   age?: number;
   sex?: "female" | "male";

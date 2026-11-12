@@ -1,28 +1,68 @@
 "use client";
 
-import { useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { EMPTY_PATIENT, PatientForm, input, toPatient, type PatientFields } from "@/components/PatientForm";
 import { Result, Trace } from "@/components/Results";
-import { CORPUS_DRUGS, streamAsk, type AskResponse, type TraceEvent } from "@/lib/api";
+import { streamAsk, type AskResponse, type TraceEvent } from "@/lib/api";
 
-type Tab = "ask" | "validate" | "write";
-const TABS: { id: Tab; label: string }[] = [
-  { id: "ask", label: "Ask" },
-  { id: "validate", label: "Validate" },
-  { id: "write", label: "Write" },
+// One request box: the agent decides from the wording whether to search the labels, validate a
+// prescription or draft one. Examples are plain language with no hint about which tool to use.
+type Example = { label: string; question: string; patient?: Partial<PatientFields> };
+const EXAMPLES: { group: string; items: Example[] }[] = [
+  {
+    group: "Questions (the four public evaluation questions)",
+    items: [
+      { label: "Warfarin contraindications", question: "What are the main contraindications for warfarin?" },
+      {
+        label: "Warfarin vs apixaban",
+        question:
+          "Compare the contraindications of warfarin and apixaban. What conditions are shared and which are unique to each drug?",
+      },
+      {
+        label: "Warfarin + sertraline bleeding risk",
+        question:
+          "A patient currently on warfarin is prescribed sertraline. What is the risk of bleeding and what monitoring is recommended?",
+      },
+      {
+        label: "Metformin at eGFR 25",
+        question:
+          "A patient with an eGFR of 25 mL/min is being considered for metformin. Is metformin contraindicated at this level of renal function, and what is the threshold?",
+      },
+    ],
+  },
+  {
+    group: "Is this prescription safe for my patient?",
+    items: [
+      {
+        label: "Metformin, kidney disease",
+        question: "Can I start my patient on metformin 500 mg twice daily?",
+        patient: { age: "67", sex: "male", egfr: "25", hepatic_impairment: "none" },
+      },
+      {
+        label: "Sertraline for a patient on warfarin",
+        question: "I'd like to prescribe sertraline 50 mg once daily for this patient. Any problems?",
+        patient: { age: "58", sex: "male", egfr: "80", hepatic_impairment: "none", current_medications: "warfarin" },
+      },
+    ],
+  },
+  {
+    group: "Suggest a prescription",
+    items: [
+      {
+        label: "New type 2 diabetes",
+        question: "What should I prescribe this patient for newly diagnosed type 2 diabetes?",
+        patient: {
+          age: "60",
+          sex: "female",
+          egfr: "75",
+          hepatic_impairment: "none",
+          pregnant: "no",
+          breastfeeding: "no",
+        },
+      },
+    ],
+  },
 ];
-
-// The four public evaluation questions from the assignment.
-const EXAMPLES = [
-  "What are the main contraindications for warfarin?",
-  "Compare the contraindications of warfarin and apixaban. What conditions are shared and which are unique to each drug?",
-  "A patient currently on warfarin is prescribed sertraline. What is the risk of bleeding and what monitoring is recommended?",
-  "A patient with an eGFR of 25 mL/min is being considered for metformin. Is metformin contraindicated at this level of renal function, and what is the threshold?",
-];
-
-type Rx = { drug: string; dose: string; frequency: string };
-const EMPTY_RX: Rx = { drug: "", dose: "", frequency: "" };
-const MAX_RX = 10;
 
 type Run = { events: TraceEvent[]; result: AskResponse | null; error: string | null; running: boolean };
 const IDLE: Run = { events: [], result: null, error: null, running: false };
@@ -31,15 +71,15 @@ const chip =
   "rounded-full border border-slate-300 bg-white px-3 py-1 text-left text-xs text-slate-700 hover:border-teal-600 hover:text-teal-800";
 
 export default function Home() {
-  const [tab, setTab] = useState<Tab>("ask");
   const [question, setQuestion] = useState("");
-  const [rx, setRx] = useState<Rx[]>([EMPTY_RX]);
-  const [description, setDescription] = useState("");
   const [patient, setPatient] = useState<PatientFields>(EMPTY_PATIENT);
+  const [patientOpen, setPatientOpen] = useState(false);
   const [run, setRun] = useState<Run>(IDLE);
   const abort = useRef<AbortController | null>(null);
+  const hasPatient = toPatient(patient) !== null;
 
-  async function start(q: string) {
+  async function submit(e: FormEvent) {
+    e.preventDefault();
     abort.current?.abort();
     const ctrl = new AbortController();
     abort.current = ctrl;
@@ -49,13 +89,13 @@ export default function Home() {
     };
     try {
       await streamAsk(
-        { question: q, patient: toPatient(patient) },
-        (e) =>
+        { question: question.trim(), patient: toPatient(patient) },
+        (ev) =>
           update((r) => ({
             ...r,
-            events: [...r.events, e],
-            result: e.event === "final" ? e.data : r.result,
-            error: e.event === "error" ? e.data.message : r.error,
+            events: [...r.events, ev],
+            result: ev.event === "final" ? ev.data : r.result,
+            error: ev.event === "error" ? ev.data.message : r.error,
           })),
         ctrl.signal,
       );
@@ -66,33 +106,18 @@ export default function Home() {
     }
   }
 
-  function submit(e: FormEvent) {
-    e.preventDefault();
-    if (tab === "ask") start(question.trim());
-    else if (tab === "validate") {
-      const items = rx.map((r) => `${r.drug.trim()} ${r.dose.trim()} ${r.frequency.trim()}`).join("; ");
-      start(`Validate this prescription for the patient: ${items}.`);
-    } else start(`Write a prescription for this request and validate it for the patient: ${description.trim()}`);
-  }
-
   function cancel() {
     abort.current?.abort();
     abort.current = null;
     setRun((r) => ({ ...r, running: false, error: "Cancelled." }));
   }
 
-  function onTabKey(e: KeyboardEvent, i: number) {
-    const next = e.key === "ArrowRight" ? i + 1 : e.key === "ArrowLeft" ? i - 1 : null;
-    if (next === null) return;
-    const t = TABS[(next + TABS.length) % TABS.length];
-    setTab(t.id);
-    document.getElementById(`tab-${t.id}`)?.focus();
+  function loadExample(ex: Example) {
+    setQuestion(ex.question);
+    // Each example brings its own patient (or none), so details from an earlier example never leak in.
+    setPatient({ ...EMPTY_PATIENT, ...ex.patient });
+    setPatientOpen(Boolean(ex.patient));
   }
-
-  const setRow = (i: number, key: keyof Rx, v: string) => setRx(rx.map((r, j) => (j === i ? { ...r, [key]: v } : r)));
-  const showPatient = tab !== "ask";
-  // The patient form is shared by all tabs, so say when it will be sent with a plain question.
-  const hasPatient = toPatient(patient) !== null;
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
@@ -111,176 +136,79 @@ export default function Home() {
       </header>
 
       <main className="mx-auto grid max-w-6xl gap-6 px-4 py-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
-        <div>
-          <div role="tablist" aria-label="Mode" className="mb-4 flex gap-1 rounded-lg bg-slate-200 p-1">
-            {TABS.map((t, i) => (
-              <button
-                key={t.id}
-                id={`tab-${t.id}`}
-                role="tab"
-                type="button"
-                aria-selected={tab === t.id}
-                aria-controls="panel"
-                tabIndex={tab === t.id ? 0 : -1}
-                onClick={() => setTab(t.id)}
-                onKeyDown={(e) => onTabKey(e, i)}
-                className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium ${
-                  tab === t.id ? "bg-white text-teal-800 shadow-sm" : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                {t.label}
-              </button>
-            ))}
+        <form onSubmit={submit} className="space-y-4">
+          <div>
+            <label className="mb-1 block text-sm font-medium" htmlFor="question">
+              Your request
+            </label>
+            <textarea
+              id="question"
+              required
+              maxLength={4000}
+              rows={5}
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+              className={input}
+              aria-describedby="question-hint"
+              placeholder="Ask about a drug, check whether a prescription is safe for your patient, or ask what to prescribe."
+            />
+            <p id="question-hint" className="mt-1 text-xs text-slate-500">
+              The agent decides how to handle it: search the labels, check a prescription, or draft one.
+            </p>
           </div>
 
-          <form id="panel" role="tabpanel" aria-labelledby={`tab-${tab}`} onSubmit={submit} className="space-y-4">
-            {tab === "ask" && (
-              <>
-                <label className="block text-sm font-medium" htmlFor="question">
-                  Question
-                </label>
-                <textarea
-                  id="question"
-                  required
-                  maxLength={4000}
-                  rows={4}
-                  value={question}
-                  onChange={(e) => setQuestion(e.target.value)}
-                  className={input}
-                  placeholder="e.g. What are the main contraindications for warfarin?"
-                />
-                <div>
-                  <p className="mb-2 text-xs font-medium text-slate-500">Examples</p>
-                  <div className="flex flex-wrap gap-2">
-                    {EXAMPLES.map((q) => (
-                      <button key={q} type="button" className={chip} onClick={() => setQuestion(q)}>
-                        {q}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <details className="rounded-lg border border-slate-200 bg-white p-3">
-                  <summary className="cursor-pointer text-sm font-medium">
-                    Patient details (optional)
-                    {hasPatient && <span className="ml-2 font-normal text-teal-800">· included with the question</span>}
-                  </summary>
-                  <div className="mt-3">
-                    <PatientForm value={patient} onChange={setPatient} />
-                  </div>
-                </details>
-                {hasPatient && (
-                  <button type="button" className={chip} onClick={() => setPatient(EMPTY_PATIENT)}>
-                    Clear patient details
-                  </button>
-                )}
-              </>
-            )}
-
-            {tab === "validate" && (
-              <>
-                <datalist id="corpus-drugs">
-                  {CORPUS_DRUGS.map((d) => (
-                    <option key={d} value={d} />
-                  ))}
-                </datalist>
-                <fieldset className="space-y-2">
-                  <legend className="mb-1 text-sm font-medium">Prescription</legend>
-                  {rx.map((r, i) => (
-                    <div key={i} className="grid grid-cols-[1fr_1fr_1.3fr_auto] gap-2">
-                      <input aria-label={`Drug ${i + 1}`} list="corpus-drugs" required placeholder="Drug" value={r.drug} onChange={(e) => setRow(i, "drug", e.target.value)} className={input} />
-                      <input aria-label={`Dose ${i + 1}`} required placeholder="500 mg" value={r.dose} onChange={(e) => setRow(i, "dose", e.target.value)} className={input} />
-                      <input aria-label={`Frequency ${i + 1}`} required placeholder="twice daily" value={r.frequency} onChange={(e) => setRow(i, "frequency", e.target.value)} className={input} />
-                      <button
-                        type="button"
-                        aria-label={`Remove drug ${i + 1}`}
-                        disabled={rx.length === 1}
-                        onClick={() => setRx(rx.filter((_, j) => j !== i))}
-                        className="rounded-md px-2 text-slate-500 hover:bg-slate-200 disabled:opacity-30"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  ))}
-                  <div className="flex flex-wrap gap-2">
-                    <button type="button" disabled={rx.length >= MAX_RX} onClick={() => setRx([...rx, EMPTY_RX])} className={chip}>
-                      + Add drug
-                    </button>
-                    <button
-                      type="button"
-                      className={chip}
-                      onClick={() => {
-                        setRx([{ drug: "metformin", dose: "500 mg", frequency: "twice daily with meals" }]);
-                        setPatient({ ...EMPTY_PATIENT, age: "67", sex: "male", egfr: "25", hepatic_impairment: "none" });
-                      }}
-                    >
-                      Example: metformin at eGFR 25
-                    </button>
-                    <button
-                      type="button"
-                      className={chip}
-                      onClick={() => {
-                        setRx([{ drug: "sertraline", dose: "50 mg", frequency: "once daily" }]);
-                        setPatient({ ...EMPTY_PATIENT, age: "58", sex: "male", egfr: "80", hepatic_impairment: "none", current_medications: "warfarin" });
-                      }}
-                    >
-                      Example: sertraline with warfarin
-                    </button>
-                  </div>
-                </fieldset>
-              </>
-            )}
-
-            {tab === "write" && (
-              <>
-                <label className="block text-sm font-medium" htmlFor="description">
-                  What should be prescribed?
-                </label>
-                <textarea
-                  id="description"
-                  required
-                  maxLength={3500}
-                  rows={3}
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  className={input}
-                  placeholder="e.g. First-line oral therapy for newly diagnosed type 2 diabetes"
-                />
-                <button
-                  type="button"
-                  className={chip}
-                  onClick={() => {
-                    setDescription("First-line oral therapy for newly diagnosed type 2 diabetes");
-                    setPatient({ ...EMPTY_PATIENT, age: "60", sex: "female", egfr: "75", hepatic_impairment: "none", pregnant: "no", breastfeeding: "no" });
-                  }}
-                >
-                  Example: type 2 diabetes
-                </button>
-              </>
-            )}
-
-            {showPatient && (
-              <section className="rounded-lg border border-slate-200 bg-white p-3">
-                <h2 className="mb-2 text-sm font-medium">Patient</h2>
-                <PatientForm value={patient} onChange={setPatient} />
-              </section>
-            )}
-
-            <div className="flex gap-2">
-              <button
-                type="submit"
-                disabled={run.running}
-                className="rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-800 disabled:opacity-50"
-              >
-                {run.running ? "Working…" : tab === "ask" ? "Ask" : tab === "validate" ? "Validate" : "Draft & validate"}
-              </button>
-              {run.running && (
-                <button type="button" onClick={cancel} className="rounded-md px-4 py-2 text-sm text-slate-700 hover:bg-slate-200">
-                  Cancel
+          <details
+            open={patientOpen}
+            onToggle={(e) => setPatientOpen(e.currentTarget.open)}
+            className="rounded-lg border border-slate-200 bg-white p-3"
+          >
+            <summary className="cursor-pointer text-sm font-medium">
+              Patient details (optional)
+              {hasPatient && <span className="ml-2 font-normal text-teal-800">· included with the request</span>}
+            </summary>
+            <div className="mt-3 space-y-3">
+              <PatientForm value={patient} onChange={setPatient} />
+              {hasPatient && (
+                <button type="button" className={chip} onClick={() => setPatient(EMPTY_PATIENT)}>
+                  Clear patient details
                 </button>
               )}
             </div>
-          </form>
-        </div>
+          </details>
+
+          <div className="flex gap-2">
+            <button
+              type="submit"
+              disabled={run.running}
+              className="rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-800 disabled:opacity-50"
+            >
+              {run.running ? "Working…" : "Ask"}
+            </button>
+            {run.running && (
+              <button type="button" onClick={cancel} className="rounded-md px-4 py-2 text-sm text-slate-700 hover:bg-slate-200">
+                Cancel
+              </button>
+            )}
+          </div>
+
+          <section aria-labelledby="examples-title" className="space-y-3">
+            <h2 id="examples-title" className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Examples
+            </h2>
+            {EXAMPLES.map((g) => (
+              <div key={g.group}>
+                <p className="mb-1.5 text-xs font-medium text-slate-600">{g.group}</p>
+                <div className="flex flex-wrap gap-2">
+                  {g.items.map((ex) => (
+                    <button key={ex.label} type="button" className={chip} title={ex.question} onClick={() => loadExample(ex)}>
+                      {ex.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </section>
+        </form>
 
         <div className="space-y-4">
           {run.error && (
@@ -303,8 +231,8 @@ export default function Home() {
           )}
           {!run.running && !run.events.length && !run.error && (
             <p className="rounded-lg border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">
-              Ask a question, validate a prescription, or draft one. The agent plans, searches the labels, checks
-              its own answer against the sources, and cites them.
+              The agent plans, chooses its tools (label search, prescription check, prescription draft), checks its
+              own answer against the sources, and cites them. Its steps appear here as it works.
             </p>
           )}
         </div>

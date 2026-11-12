@@ -20,7 +20,7 @@ docker build -t agent . && docker run -p 8000:8000 --env-file .env agent
 
 | Endpoint | |
 |---|---|
-| `GET /` | Web UI (Ask · Validate · Write) |
+| `GET /` | Web UI: one request box + optional patient details; the agent picks the tools |
 | `GET /health` | `200 {"status": "ok", "index_ready": bool}`: the embedding index builds in ~15-25 s after start; `/health` is 200 meanwhile |
 | `POST /ask` | `{"question": "...", "patient": {...}?}` → `{answer, citations, plan, review, revisions, validation, draft}` |
 | `POST /ask/stream` | Same request; Server-Sent Events: `plan`, `tool_call`, `tool_result`, `review`, `final` (or `error`) |
@@ -87,19 +87,18 @@ disclaimer is present, and (for prescriptions) the verdict. Last run, against th
 
 | Case | Result | Time | Verdict | Cited files |
 |---|---|---|---|---|
-| Q1 warfarin contraindications | PASS | 10 s | — | `dailymed-warfarin.md` |
-| Q2 warfarin vs apixaban | PASS | 12 s | — | `dailymed-apixaban.md`, `dailymed-warfarin.md` |
-| Q3 warfarin + sertraline bleeding | PASS | 75 s | needs_more_info¹ | `dailymed-sertraline.md`, `dailymed-warfarin.md` |
-| Q4 metformin at eGFR 25 | PASS | 13 s | — | `dailymed-metformin.md` |
-| Validate metformin, eGFR 25 | PASS | 14 s | rejected | `dailymed-metformin.md` |
-| Validate sertraline on warfarin | PASS | 77 s | approved_with_warnings | sertraline, warfarin labels |
-| Validate amoxicillin, amoxicillin allergy | PASS | 55 s | rejected | `dailymed-amoxicillin.md` |
-| Validate amoxicillin, penicillin allergy | PASS | 67 s | rejected | amoxicillin label + monograph |
-| Write first-line T2D | PASS | 56 s | approved | `dailymed-metformin.md` |
+| Q1 warfarin contraindications | PASS | 17 s | — | `dailymed-warfarin.md` |
+| Q2 warfarin vs apixaban | PASS | 35 s | — | `dailymed-apixaban.md`, `dailymed-warfarin.md` |
+| Q3 warfarin + sertraline bleeding | PASS | 13 s | — | sertraline + warfarin labels, warfarin monograph |
+| Q4 metformin at eGFR 25 | PASS | 8 s | — | `dailymed-metformin.md` |
+| "Can I start my patient on metformin 500 mg twice daily?" (eGFR 25) | PASS | 18 s | rejected | `dailymed-metformin.md` |
+| "I'd like to prescribe sertraline 50 mg once daily…" (on warfarin) | PASS | 45 s | approved_with_warnings | sertraline + warfarin labels |
+| "Is amoxicillin 500 mg every 8 hours OK…?" (amoxicillin allergy) | PASS | 59 s | rejected | `dailymed-amoxicillin.md` |
+| Same, penicillin allergy (drug class) | PASS | 15 s | rejected | `dailymed-amoxicillin.md` |
+| "What should I prescribe … for newly diagnosed type 2 diabetes?" | PASS | 41 s | approved (metformin) | `dailymed-metformin.md` |
 
-¹ In this run the agent chose to also call `validate_prescription` for Q3 (no dose or patient data was given,
-so it correctly returned `needs_more_info`).
-
+The prescription requests are phrased like a clinician would ask, with no hint about which tool to use: the
+verdict and draft checks only pass if the LLM itself chose `validate_prescription` or `write_prescription`.
 LLM output varies between runs; the checks are on sources, disclaimer and verdicts, not exact wording.
 
 ## Develop

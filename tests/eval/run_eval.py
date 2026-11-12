@@ -51,11 +51,12 @@ CASES = [
         },
         "files": {"dailymed-metformin.md"},
     },
-    # --- prescription scenarios (validate_prescription / write_prescription) ---
+    # --- prescription scenarios, phrased like a clinician would (no tool hints): the verdict / draft
+    #     checks only pass if the LLM itself chose validate_prescription / write_prescription ---
     {
         "name": "Validate metformin, eGFR 25",
         "request": {
-            "question": "Validate this prescription for the patient: metformin 500 mg twice daily.",
+            "question": "Can I start my patient on metformin 500 mg twice daily?",
             "patient": {"age": 67, "sex": "male", "egfr": 25, "hepatic_impairment": "none"},
         },
         "files": {"dailymed-metformin.md"},
@@ -64,7 +65,7 @@ CASES = [
     {
         "name": "Validate sertraline on warfarin",
         "request": {
-            "question": "Validate this prescription for the patient: sertraline 50 mg once daily.",
+            "question": "I'd like to prescribe sertraline 50 mg once daily for this patient. Any problems?",
             "patient": {
                 "age": 58,
                 "sex": "male",
@@ -79,7 +80,7 @@ CASES = [
     {
         "name": "Validate amoxicillin, amoxicillin allergy",
         "request": {
-            "question": "Validate this prescription for the patient: amoxicillin 500 mg every 8 hours.",
+            "question": "Is amoxicillin 500 mg every 8 hours OK for this patient?",
             "patient": {"age": 30, "sex": "male", "allergies": ["amoxicillin (hives)"]},
         },
         "files": set(),
@@ -88,7 +89,7 @@ CASES = [
     {
         "name": "Validate amoxicillin, penicillin allergy",
         "request": {
-            "question": "Validate this prescription for the patient: amoxicillin 500 mg every 8 hours.",
+            "question": "Is amoxicillin 500 mg every 8 hours OK for this patient?",
             "patient": {"age": 30, "sex": "male", "egfr": 90, "allergies": ["penicillin (anaphylaxis)"]},
         },
         "files": {"dailymed-amoxicillin.md"},
@@ -97,8 +98,7 @@ CASES = [
     {
         "name": "Write first-line T2D",
         "request": {
-            "question": "Write a prescription for this request and validate it for the patient: first-line "
-            "oral therapy for newly diagnosed type 2 diabetes.",
+            "question": "What should I prescribe this patient for newly diagnosed type 2 diabetes?",
             "patient": {
                 "age": 60,
                 "sex": "female",

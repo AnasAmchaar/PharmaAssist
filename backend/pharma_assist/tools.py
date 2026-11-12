@@ -313,7 +313,7 @@ def write_prescription(description: str, patient: PatientProfile | None = None) 
     """Draft a prescription from a clinical request, then validate it automatically for the patient.
 
     Uses only corpus drugs and label dosing. Use it when the user asks to write, draft or suggest a
-    prescription (e.g. "first-line therapy for type 2 diabetes in a 60-year-old").
+    prescription, or what to prescribe (e.g. "what should I give this patient for type 2 diabetes?").
 
     Args:
         description: The clinical request, including the indication.

@@ -105,8 +105,8 @@
    - Disk cache at `.cache/emb-<sha256(corpus+model)>.npy` so embeddings are computed once per corpus/model hash.
 4. **Single-Container Deployment:**
    - Multi-stage `Dockerfile`: Stage 1 builds Next.js static export (`output: "export"` → `/web/out`); Stage 2 runs FastAPI on `:8000` serving `/health`, `/ask`, `/ask/stream` (via built-in `fastapi.sse`), and mounts the static Next.js export at `/`.
-5. **Single-Page Next.js UI (`Ask · Validate · Write`):**
-   - One page with three tabs, a structured `PatientProfile` form (`age, sex, weight_kg, egfr, hepatic_impairment, pregnant, breastfeeding, conditions, allergies, current_medications`), clickable example questions, live SSE agent trace (plan → tool calls → critic review), and cited answers.
+5. **Single-Page Next.js UI (one request box):**
+   - The user never picks a tool: one request box (questions, "is this safe for my patient?", "what should I prescribe?") plus a collapsible structured `PatientProfile` form (`age, sex, weight_kg, egfr, hepatic_impairment, pregnant, breastfeeding, conditions, allergies, current_medications`), clickable example questions, live SSE agent trace (plan → tool calls → critic review), and cited answers.
 
 ### Target Repository Layout
 
@@ -210,3 +210,7 @@ PharmaAssist/
 - [x] `README.md` (quick start, endpoints, assignment-step mapping, tools, eval table, develop, limits, AI config) and `docs/PRESENTATION.md` (10-minute walkthrough script + likely questions; serves as the walkthrough).
 - [x] Final: ruff clean, 55 unit + 16 live tests pass, frontend lint/tsc clean, Docker image rebuilt and evaluated.
 - Remaining for the user: push to the public GitHub remote (`origin`) before the deadline.
+
+### Post-plan change — single request box (user request: "the LLM should take full responsibility of choosing the right tool")
+- [x] Removed the `Ask · Validate · Write` tabs and the prescription-row form: they made the user choose the tool. Now one request box + optional `PatientForm`; grouped plain-language examples (public questions, "is this safe for my patient?", "what should I prescribe?") that load their own patient (or none). `write_prescription` description also mentions "what to prescribe".
+- [x] Eval prescription cases rephrased like a clinician would ask (no "validate"/"write" wording); their verdict/draft checks only pass if the LLM itself chose `validate_prescription` / `write_prescription`. In-process eval: 9/9. Browser check against the rebuilt container: metformin example → LLM chose `validate_prescription` → Rejected; no console errors; no horizontal scroll at 390 px.

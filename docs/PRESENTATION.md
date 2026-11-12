@@ -22,7 +22,7 @@ docker build -t agent . && docker run -p 8000:8000 --env-file .env agent
 
 ## 2. Live demo: a plain question (2 min)
 
-- **Ask** tab → click the example *"Compare the contraindications of warfarin and apixaban…"*.
+- Click the example *Warfarin vs apixaban* → **Ask**. There is one request box: the user never picks a tool.
 - Point at the **agent trace** as it streams:
   - the **plan** (decomposition),
   - the **tool calls**: the model chose `build_context` with drug and section filters, once per drug,
@@ -32,7 +32,8 @@ docker build -t agent . && docker run -p 8000:8000 --env-file .env agent
 
 ## 3. Live demo: prescription safety (2 min)
 
-- **Validate** tab → *Example: metformin at eGFR 25* → Validate.
+- Click *Metformin, kidney disease* ("Can I start my patient on metformin 500 mg twice daily?" with the
+  patient's eGFR 25 filled in) → **Ask**. Point at the trace: the LLM chose `validate_prescription` itself.
 - Result: **Rejected**, with a CRITICAL contraindication citing `dailymed-metformin.md` (eGFR below 30).
 - Say why it is trustworthy:
   - the **verdict is computed in code**, not by the model: critical → rejected; missing patient data →
@@ -40,7 +41,8 @@ docker build -t agent . && docker run -p 8000:8000 --env-file .env agent
   - **unknown is not normal**: leave hepatic status empty and the verdict becomes *Needs more information*;
   - interactions are searched **in both directions** (example: sertraline with warfarin → warning cites
     both labels).
-- Optional (1 min): **Write** tab → *Example: type 2 diabetes* → metformin 500 mg twice daily, validated
+- Optional (1 min): *New type 2 diabetes* ("What should I prescribe…?") → the LLM chooses
+  `write_prescription` → metformin 500 mg twice daily, validated
   automatically.
 
 ## 4. Architecture (2.5 min)
