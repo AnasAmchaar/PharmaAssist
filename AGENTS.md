@@ -89,7 +89,7 @@
                          |
                    (no tool_calls)
                          v
-                       critic --(revise & revisions < MAX_REVISIONS)--> agent
+                       critic --(revise & revisions < MAX_REVISIONS=1)--> agent
                          |
               (approve or max reached)
                          v
@@ -172,7 +172,7 @@ PharmaAssist/
 
 ### Step 4 — LangGraph Agent (`agent.py`) *(DONE)*
 - [x] `StateGraph(AgentState)`: `planner` (structured `Plan`) → `agent` (`bind_tools(TOOLS)`, LLM picks tools) ⇄ `tools` (`ToolNode`, `handle_tool_errors=True`) → `critic` (structured `Critique`: unsupported claims, ambiguities, feedback) → `agent` (feedback as a HumanMessage) or `finalizer`. `ask(question)` returns the final state (`plan`, `messages`, `critique`, `revisions`, `answer`, `citations`).
-- [x] Loop guards are module constants: `MAX_TOOL_ROUNDS=8` (then `tool_choice="none"`), `MAX_REVISIONS=2`, `RECURSION_LIMIT=50` backstop. `GraphRecursionError` / LLM errors propagate: Step 5 must turn them into an error response/event.
+- [x] Loop guards are module constants: `MAX_TOOL_ROUNDS=8` (then `tool_choice="none"`), `MAX_REVISIONS=2` (1 since Step 8), `RECURSION_LIMIT=50` backstop. `GraphRecursionError` / LLM errors propagate: Step 5 must turn them into an error response/event.
 - [x] Sources are collected from ToolMessage artifacts (no reducer). `renumber_citations`: `[a.md#1, b.md#2]` → `[1][2]` in order of first use, unknown ids dropped, non-citation brackets kept. Finalizer appends reviewer notes (ambiguities; unverified claims if the revision budget ran out), a numbered **Sources** list (file + heading), and `DISCLAIMER` in code.
 - [x] Live: all 4 public questions cite their expected files (Q1 15s/0 revisions, Q2 32s/1, Q3 78s/2, Q4 13s/0).
 - [x] `tests/test_agent.py` (fake LLM: citation renumbering, tool → revise → finalize flow, revision budget flags claims, tool budget forces an answer; live: 4 eval questions). `FakeLLM`, `fake_llm` and `EVAL_QUESTIONS` live in `tests/conftest.py`.
@@ -203,8 +203,10 @@ PharmaAssist/
 - [x] `.env.example` updated (dropped the removed `MAX_REVISIONS`; default model `gpt-5.6-terra`, matching the user's change to `config.py`). README: run/develop commands.
 - [x] Lint, test, `/ponytail-review` (no Must fix; removed a `useradd --system` uid warning), commit.
 
-### Step 8 — Evaluation Harness, Whole-Repo Audit, Docs & Presentation *(NEXT)*
-- [ ] Add `tests/eval/run_eval.py` (runs the 4 public questions + prescription scenarios, verifies expected source files and disclaimer, writes `eval_report.md`).
-- [ ] Run `/ponytail-audit` across the repository and fix any **Must fix** items.
-- [ ] Finalize `README.md`, `docs/PRESENTATION.md` (10-minute walkthrough guide), and the `walkthrough.md` artifact.
-
+### Step 8 — Evaluation Harness, Whole-Repo Audit, Docs & Presentation *(DONE)*
+- [x] `tests/eval/run_eval.py`: 4 public questions + 5 prescription scenarios (metformin eGFR 25, sertraline on warfarin, amoxicillin with amoxicillin / penicillin allergy, T2D draft) through `POST /ask`, in-process (`TestClient`) or `--url` (server/container); checks HTTP 200, expected files cited, citations, disclaimer, verdicts, draft drug → `docs/eval_report.md` (committed; no longer gitignored). Last run against the Docker container: **9/9 pass**.
+- [x] Latency tuning from the first eval run (prescription cases 92-142 s, every one spending both rewrites and still ending in "revise"): planner plans only what was asked, agent answers concisely and reports tool verdicts instead of re-deriving them, `MAX_REVISIONS` 2 → 1. Total eval time ~640 s → ~320 s, slowest case 142 s → 77 s; live suite 191 s → 97 s.
+- [x] `/ponytail-audit` (load assumed: a local demo / grading run, a few users): no Must fix. Fixed: unused `pytest-asyncio` dev dependency + its config; stale `tools.py` docstring; duplicated input class in the frontend. Checked and kept: drug-class allergies (penicillin → amoxicillin, NSAID → ibuprofen) are caught by the grounded LLM review (verified live, now an eval case) rather than a hand-written class table.
+- [x] `README.md` (quick start, endpoints, assignment-step mapping, tools, eval table, develop, limits, AI config) and `docs/PRESENTATION.md` (10-minute walkthrough script + likely questions; serves as the walkthrough).
+- [x] Final: ruff clean, 55 unit + 16 live tests pass, frontend lint/tsc clean, Docker image rebuilt and evaluated.
+- Remaining for the user: push to the public GitHub remote (`origin`) before the deadline.

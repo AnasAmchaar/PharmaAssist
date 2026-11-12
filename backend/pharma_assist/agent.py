@@ -18,8 +18,10 @@ from pharma_assist.schemas import Critique, Plan, Source
 from pharma_assist.tools import CORPUS_DRUGS, TOOLS, render_sources
 
 MAX_TOOL_ROUNDS = 8  # after this many tool-calling turns the agent must answer with what it has
-MAX_REVISIONS = 2  # critic-requested rewrites; afterwards remaining doubts are shown as reviewer notes
-RECURSION_LIMIT = 50  # backstop: the guards above cap a run at ~24 steps (planner, 8 tool rounds, 3 drafts)
+# Critic-requested rewrites; afterwards remaining doubts are shown as reviewer notes. 1, not 2: in the eval a
+# second rewrite rarely fixed what the first did not, and each one costs ~30 s.
+MAX_REVISIONS = 1
+RECURSION_LIMIT = 50  # backstop: the guards above cap a run at ~22 steps (planner, 8 tool rounds, 2 drafts)
 
 DISCLAIMER = (
     "This answer is generated from FDA DailyMed labels and MedlinePlus monographs for research and "
@@ -44,7 +46,8 @@ _PLANNER_SYSTEM = f"""You plan how to answer a pharmacology question from a drug
 {", ".join(CORPUS_DRUGS)}.
 Break the question into 1-4 short sub-questions or actions, in order. Use generic drug names. If the user \
 describes a patient and a drug/dose, include a step to validate that prescription; if they ask for a \
-prescription to be written, include a step to draft it. Do not answer the question."""
+prescription to be written, include a step to draft it. Plan only what the user asked: no extra steps for \
+counseling, alternatives, titration, quantities or refills unless requested. Do not answer the question."""
 
 _AGENT_SYSTEM = """You are PharmaAssist, a pharmacology research assistant. You answer ONLY from passages \
 returned by your tools, never from memory.
@@ -60,8 +63,11 @@ concrete prescription for a patient; write_prescription drafts one and validates
 - Cite every factual sentence with the passage id(s) in square brackets right after it, e.g. \
 [dailymed-warfarin.md#13]. Only cite ids that appear in tool results.
 - If the passages do not answer something, say so plainly instead of guessing.
-- Be concise and clinically precise: give thresholds, doses and conditions exactly as the label states \
-them. Use short paragraphs or bullet points.
+- Answer what was asked, concisely (usually under 250 words) and clinically precisely: give thresholds, \
+doses and conditions exactly as the label states them. Use short paragraphs or bullet points. Do not add \
+counseling, alternatives or background the user did not ask for.
+- After validate_prescription or write_prescription, report the verdict and its issues with their \
+citations; do not re-derive them.
 - Do not add a medical disclaimer; it is added automatically."""
 
 _CRITIC_SYSTEM = """You review a draft answer to a pharmacology question before it is shown to the user.

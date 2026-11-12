@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState, type FormEvent, type KeyboardEvent } from "react";
-import { EMPTY_PATIENT, PatientForm, toPatient, type PatientFields } from "@/components/PatientForm";
+import { EMPTY_PATIENT, PatientForm, input, toPatient, type PatientFields } from "@/components/PatientForm";
 import { Result, Trace } from "@/components/Results";
 import { CORPUS_DRUGS, streamAsk, type AskResponse, type TraceEvent } from "@/lib/api";
 
@@ -27,8 +27,6 @@ const MAX_RX = 10;
 type Run = { events: TraceEvent[]; result: AskResponse | null; error: string | null; running: boolean };
 const IDLE: Run = { events: [], result: null, error: null, running: false };
 
-const input =
-  "w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm focus:border-teal-600 focus:outline-none focus:ring-1 focus:ring-teal-600";
 const chip =
   "rounded-full border border-slate-300 bg-white px-3 py-1 text-left text-xs text-slate-700 hover:border-teal-600 hover:text-teal-800";
 

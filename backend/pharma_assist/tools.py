@@ -2,7 +2,7 @@
 
 Each tool returns (text for the LLM, artifact) via `response_format="content_and_artifact"`. Artifacts
 carry the retrieved `Source`s, so citations come from real chunks, never from the model's memory.
-`run_validation` / `run_draft` are the plain functions behind the tools (the API calls them directly).
+`run_validation` / `run_draft` are the plain functions behind the tools (unit-testable without the agent).
 """
 
 import json

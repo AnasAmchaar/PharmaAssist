@@ -51,7 +51,7 @@ export function toPatient(f: PatientFields): Patient | null {
   return Object.keys(p).length ? p : null;
 }
 
-const input =
+export const input =
   "w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm focus:border-teal-600 focus:outline-none focus:ring-1 focus:ring-teal-600";
 
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {

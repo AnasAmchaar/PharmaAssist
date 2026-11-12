@@ -31,8 +31,6 @@ Thumbs.db
 .vscode/*
 !.vscode/extensions.json
 
-# Reports
-eval_report.md
 
 
 # Assignment brief (proprietary; keep local)
