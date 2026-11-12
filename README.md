@@ -22,13 +22,17 @@ docker build -t agent . && docker run -p 8000:8000 --env-file .env agent
 |---|---|
 | `GET /` | Web UI: one request box + optional patient details; the agent picks the tools |
 | `GET /health` | `200 {"status": "ok", "index_ready": bool}`: the embedding index builds in ~15-25 s after start; `/health` is 200 meanwhile |
-| `POST /ask` | `{"question": "...", "patient": {...}?}` → `{answer, citations, plan, review, revisions, validation, draft}` |
+| `POST /ask` | `{"question": "...", "patient": {...}?, "images": ["data:image/…"]?}` → `{answer, citations, plan, review, revisions, validation, draft}` |
 | `POST /ask/stream` | Same request; Server-Sent Events: `plan`, `tool_call`, `tool_result`, `review`, `final` (or `error`) |
 
 ```bash
 curl -s localhost:8000/ask -H 'Content-Type: application/json' \
   -d '{"question": "What are the main contraindications for warfarin?"}'
 ```
+
+`images` is optional: up to 3 PNG/JPEG/WebP/GIF images as base64 data URLs (e.g. a photo of a prescription or a
+drug label). The vision model reads them; planner, agent and critic all see them, and the critic checks the
+answer reads them correctly. The UI accepts them by button, paste or drag-and-drop and downscales photos first.
 
 `patient` is optional and structured (`age, sex, weight_kg, egfr, hepatic_impairment, pregnant, breastfeeding,
 conditions, allergies, current_medications`). Fields left out are **unknown, not normal**: if a label rule
@@ -87,15 +91,16 @@ disclaimer is present, and (for prescriptions) the verdict. Last run, against th
 
 | Case | Result | Time | Verdict | Cited files |
 |---|---|---|---|---|
-| Q1 warfarin contraindications | PASS | 17 s | — | `dailymed-warfarin.md` |
-| Q2 warfarin vs apixaban | PASS | 35 s | — | `dailymed-apixaban.md`, `dailymed-warfarin.md` |
-| Q3 warfarin + sertraline bleeding | PASS | 13 s | — | sertraline + warfarin labels, warfarin monograph |
-| Q4 metformin at eGFR 25 | PASS | 8 s | — | `dailymed-metformin.md` |
-| "Can I start my patient on metformin 500 mg twice daily?" (eGFR 25) | PASS | 18 s | rejected | `dailymed-metformin.md` |
-| "I'd like to prescribe sertraline 50 mg once daily…" (on warfarin) | PASS | 45 s | approved_with_warnings | sertraline + warfarin labels |
-| "Is amoxicillin 500 mg every 8 hours OK…?" (amoxicillin allergy) | PASS | 59 s | rejected | `dailymed-amoxicillin.md` |
-| Same, penicillin allergy (drug class) | PASS | 15 s | rejected | `dailymed-amoxicillin.md` |
-| "What should I prescribe … for newly diagnosed type 2 diabetes?" | PASS | 41 s | approved (metformin) | `dailymed-metformin.md` |
+| Q1 warfarin contraindications | PASS | 12 s | — | `dailymed-warfarin.md` |
+| Q2 warfarin vs apixaban | PASS | 16 s | — | `dailymed-apixaban.md`, `dailymed-warfarin.md` |
+| Q3 warfarin + sertraline bleeding | PASS | 18 s | — | `dailymed-sertraline.md`, `dailymed-warfarin.md` |
+| Q4 metformin at eGFR 25 | PASS | 10 s | — | `dailymed-metformin.md` |
+| "Can I start my patient on metformin 500 mg twice daily?" (eGFR 25) | PASS | 16 s | rejected | `dailymed-metformin.md` |
+| "I'd like to prescribe sertraline 50 mg once daily…" (on warfarin) | PASS | 60 s | approved_with_warnings | sertraline + warfarin labels |
+| "Is amoxicillin 500 mg every 8 hours OK…?" (amoxicillin allergy) | PASS | 42 s | rejected | `dailymed-amoxicillin.md` |
+| Same, penicillin allergy (drug class) | PASS | 19 s | rejected | `dailymed-amoxicillin.md` |
+| "What should I prescribe … for newly diagnosed type 2 diabetes?" | PASS | 102 s | approved (metformin) | `dailymed-metformin.md` |
+| "Is this prescription safe for my patient?" + **photo** of a metformin prescription (eGFR 25) | PASS | 18 s | rejected | `dailymed-metformin.md` |
 
 The prescription requests are phrased like a clinician would ask, with no hint about which tool to use: the
 verdict and draft checks only pass if the LLM itself chose `validate_prescription` or `write_prescription`.
@@ -120,6 +125,8 @@ Python 3.12 with exact `==` pins in `pyproject.toml` + `uv.lock`; npm versions p
   `OPENAI_BASE_URL`, and quotes are stripped because `docker run --env-file` keeps them literally.
 - **Embeddings are batched** (64 inputs per request): a single 528-input request put the LiteLLM proxy into
   a rate-limit cooldown.
+- **Images cost tokens on every model call** of a request (planner, each agent turn, critic): the UI caps
+  them at 3 and ~1600 px.
 - **Latency**: plain questions take ~10-30 s; prescription checks and interaction questions 1-1.5 min (tool
   call + LLM review + critic). `/ask/stream` shows progress and sends keep-alive pings meanwhile.
 - **Generic names only**: brand names are not mapped (the UI suggests the 10 corpus drugs).

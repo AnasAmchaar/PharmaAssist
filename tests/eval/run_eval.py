@@ -9,6 +9,7 @@ any check fails. Uses the real LLM endpoint from `.env` (a full run takes a few 
 """
 
 import argparse
+import base64
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -19,6 +20,11 @@ import httpx
 
 ROOT = Path(__file__).resolve().parents[2]
 DISCLAIMER = "not medical advice"
+# A fictional prescription photo (metformin 500 mg twice daily) for the image case.
+RX_PHOTO = (
+    "data:image/png;base64,"
+    + base64.b64encode((ROOT / "tests" / "fixtures" / "rx-metformin.png").read_bytes()).decode()
+)
 
 CASES = [
     # --- the 4 public evaluation questions (expected files from the assignment) ---
@@ -112,6 +118,17 @@ CASES = [
         "verdicts": {"approved", "approved_with_warnings", "needs_more_info"},
         "draft_drug": "metformin",
     },
+    # --- image input: the drug and dose exist only in the photo ---
+    {
+        "name": "Prescription photo, eGFR 25",
+        "request": {
+            "question": "Is this prescription safe for my patient?",
+            "patient": {"age": 67, "egfr": 25, "hepatic_impairment": "none"},
+            "images": [RX_PHOTO],
+        },
+        "files": {"dailymed-metformin.md"},
+        "verdicts": {"rejected"},
+    },
 ]
 
 
@@ -166,7 +183,9 @@ def report(results: list[dict], target: str) -> str:
         )
     for r in results:
         if body := r.get("body"):
-            lines += ["", f"## {r['case']['name']}", "", f"> {r['case']['request']['question']}", ""]
+            request = r["case"]["request"]
+            attached = f" *(+{len(request['images'])} image)*" if request.get("images") else ""
+            lines += ["", f"## {r['case']['name']}", "", f"> {request['question']}{attached}", ""]
             if body.get("plan"):
                 lines += ["Plan: " + " → ".join(body["plan"]), ""]
             lines += [body["answer"]]

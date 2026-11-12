@@ -96,7 +96,7 @@ async function errorMessage(res: Response): Promise<string> {
 }
 
 export async function streamAsk(
-  body: { question: string; patient: Patient | null },
+  body: { question: string; patient: Patient | null; images: string[] },
   onEvent: (e: TraceEvent) => void,
   signal: AbortSignal,
 ): Promise<void> {

@@ -32,8 +32,10 @@ docker build -t agent . && docker run -p 8000:8000 --env-file .env agent
 
 ## 3. Live demo: prescription safety (2 min)
 
-- Click *Metformin, kidney disease* ("Can I start my patient on metformin 500 mg twice daily?" with the
-  patient's eGFR 25 filled in) → **Ask**. Point at the trace: the LLM chose `validate_prescription` itself.
+- Click *Prescription photo, kidney disease*: it attaches a photo of a (fictional) metformin prescription
+  and fills in the patient (67 y, eGFR 25); the request is just "Is this prescription safe for my patient?"
+  → **Ask**. Point at the trace: the model read drug, dose and frequency from the **image** and chose
+  `validate_prescription` itself.
 - Result: **Rejected**, with a CRITICAL contraindication citing `dailymed-metformin.md` (eGFR below 30).
 - Say why it is trustworthy:
   - the **verdict is computed in code**, not by the model: critical → rejected; missing patient data →

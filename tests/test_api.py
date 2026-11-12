@@ -1,4 +1,6 @@
+import base64
 import json
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -8,6 +10,11 @@ from pharma_assist import tools
 from pharma_assist.api import app
 from pharma_assist.schemas import Critique, Plan
 
+# Smallest valid PNG (1x1), as the UI would send it.
+PNG = (
+    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9a"
+    "wAAAABJRU5ErkJggg=="
+)
 client = TestClient(app)  # no `with`: the lifespan (real index warm-up) does not run in unit tests
 
 
@@ -64,7 +71,7 @@ def test_ask_returns_cited_answer_and_passes_patient(fake_llm, chunks):
     assert [c["id"] for c in body["citations"]] == [cid]
     assert body["plan"] == ["Find warfarin contraindications"] and body["review"]["verdict"] == "approve"
     assert body["validation"] is None and body["draft"] is None
-    question = llm.calls[0][1][1]  # what the planner saw: stripped question + patient JSON
+    question = llm.calls[0][1].text  # what the planner saw: stripped question + patient JSON
     assert question.startswith("Warfarin contraindications?\n\nPatient profile")
     assert '"pregnant":true' in question
 
@@ -77,6 +84,9 @@ def test_ask_returns_cited_answer_and_passes_patient(fake_llm, chunks):
         {"question": "x" * 4001},
         {"question": "x", "patient": {"egfr": -1}},
         {"question": "x", "patient": {"current_medications": ["warfarin"] * 21}},  # bounds retrieval fan-out
+        {"question": "x", "images": ["data:image/svg+xml;base64,PHN2Zz4="]},  # not a vision format
+        {"question": "x", "images": ["data:image/png;base64,not base64!"]},
+        {"question": "x", "images": [PNG] * 4},  # at most 3
     ],
 )
 def test_ask_rejects_invalid_input(payload):
@@ -87,6 +97,30 @@ def test_ask_agent_failure_is_502_without_details(fake_llm):
     fake_llm()  # no queued outputs: the planner's LLM call fails
     r = client.post("/ask", json={"question": "Warfarin?"})
     assert r.status_code == 502 and "IndexError" not in r.text
+
+
+def test_images_reach_planner_agent_and_critic(fake_llm):
+    args = {"query": "metformin dose", "drugs": ["metformin"]}
+    llm = fake_llm(
+        Plan(steps=["Read the prescription in the image"]),
+        AIMessage("", tool_calls=[{"name": "build_context", "args": args, "id": "c1"}]),
+        AIMessage("The image shows metformin 500 mg."),
+        Critique(verdict="approve"),
+    )
+    r = client.post("/ask", json={"question": "Is this prescription OK?", "images": [PNG]})
+    assert r.status_code == 200
+
+    def image_urls(messages):
+        return [
+            block["image_url"]["url"]
+            for m in messages
+            if isinstance(m.content, list)
+            for block in m.content
+            if block.get("type") == "image_url"
+        ]
+
+    planner, agent_turn, critic = llm.calls[0], llm.calls[1], llm.calls[-1]
+    assert image_urls(planner) == image_urls(agent_turn) == image_urls(critic) == [PNG]
 
 
 def test_stream_emits_trace_then_final(fake_llm):
@@ -107,3 +141,23 @@ def test_stream_reports_errors_as_event(fake_llm):
     fake_llm()
     events = sse_events(client.post("/ask/stream", json={"question": "Warfarin?"}).text)
     assert [e for e, _ in events] == ["error"]
+
+
+# --- live: real model reads an image (`uv run pytest -m live`) ---
+
+
+@pytest.mark.live
+def test_live_prescription_photo_is_read_and_validated():
+    photo = (Path(__file__).parent / "fixtures" / "rx-metformin.png").read_bytes()  # metformin 500 mg bid
+    r = client.post(
+        "/ask",
+        json={
+            "question": "Is this prescription safe for my patient?",
+            "patient": {"age": 67, "egfr": 25, "hepatic_impairment": "none"},
+            "images": ["data:image/png;base64," + base64.b64encode(photo).decode()],
+        },
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["validation"]["verdict"] == "rejected"  # metformin read from the image, eGFR 25 < 30
+    assert "dailymed-metformin.md" in {c["file"] for c in body["citations"]}

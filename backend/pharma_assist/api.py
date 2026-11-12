@@ -52,7 +52,7 @@ def _agent_input(req: AskRequest) -> dict:
     question = req.question
     if req.patient is not None:
         question += f"\n\nPatient profile (null = unknown): {req.patient.model_dump_json()}"
-    return {"question": question}
+    return {"question": question, "images": req.images}
 
 
 def to_response(state: agent.AgentState) -> AskResponse:

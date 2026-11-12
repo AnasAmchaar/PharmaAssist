@@ -22,7 +22,7 @@ function inline(text: string, onCite: Cite): ReactNode[] {
           type="button"
           onClick={() => onCite(n)}
           aria-label={`Show source ${n}`}
-          className="mx-0.5 rounded bg-teal-100 px-1 align-super text-[0.7rem] font-semibold text-teal-900 hover:bg-teal-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600"
+          className="mx-0.5 rounded-md bg-teal-50 px-1.5 align-super text-[0.68rem] font-semibold text-teal-800 ring-1 ring-teal-200 hover:bg-teal-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600"
         >
           {n}
         </button>

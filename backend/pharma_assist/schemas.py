@@ -151,12 +151,27 @@ class Critique(BaseModel):
     feedback: str = Field("", description="What the writer must fix, if revising")
 
 
+# Base64 data URL of a PNG/JPEG/WebP/GIF image (the formats the vision model accepts), ~3.7 MB decoded at
+# most; the UI downscales photos before upload, so real requests are far smaller.
+ImageDataUrl = Annotated[
+    str,
+    StringConstraints(
+        pattern=r"^data:image/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/]+={0,2}$", max_length=5_000_000
+    ),
+]
+
+
 class AskRequest(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
     question: str = Field(min_length=1, max_length=4000)
     patient: PatientProfile | None = Field(
         None, description="Optional structured patient details, passed to the agent with the question"
+    )
+    images: list[ImageDataUrl] = Field(
+        default_factory=list,
+        max_length=3,
+        description="Optional images (e.g. a photo of a prescription or a drug label) as base64 data URLs",
     )
 
 

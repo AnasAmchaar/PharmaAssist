@@ -32,6 +32,7 @@ DISCLAIMER = (
 
 class AgentState(TypedDict, total=False):
     question: str
+    images: list[str]  # data URLs attached by the user; shown to planner, agent and critic
     plan: list[str]
     messages: Annotated[list[AnyMessage], add_messages]
     critique: Critique
@@ -71,7 +72,9 @@ citations; do not re-derive them.
 - Do not add a medical disclaimer; it is added automatically."""
 
 _CRITIC_SYSTEM = """You review a draft answer to a pharmacology question before it is shown to the user.
-Check the draft ONLY against the retrieved passages below:
+Facts the user gave (in the question or in attached images, e.g. a prescription photo) are inputs, not \
+claims: check that the draft reads them correctly, but do not ask for passages to support them.
+Check every other claim in the draft ONLY against the retrieved passages below:
 - Every factual claim must be supported by the passage(s) it cites. List claims that are unsupported, \
 cite nothing, or cite a passage that does not say it.
 - The draft must answer every part of the question (and plan) that the passages can answer.
@@ -85,13 +88,18 @@ tell the writer exactly what to fix."""
 # --- nodes -------------------------------------------------------------------------------------
 
 
+def user_message(text: str, images: list[str]) -> HumanMessage:
+    """Plain text, or text + image blocks (OpenAI `image_url` format) when the user attached images."""
+    if not images:
+        return HumanMessage(text)
+    blocks = [{"type": "image_url", "image_url": {"url": url}} for url in images]
+    return HumanMessage([{"type": "text", "text": text}, *blocks])
+
+
 def planner(state: AgentState) -> dict:
-    plan = (
-        get_chat_model()
-        .with_structured_output(Plan)
-        .invoke([("system", _PLANNER_SYSTEM), ("human", state["question"])])
-    )
-    return {"plan": plan.steps, "messages": [HumanMessage(state["question"])], "revisions": 0}
+    question = user_message(state["question"], state.get("images", []))
+    plan = get_chat_model().with_structured_output(Plan).invoke([SystemMessage(_PLANNER_SYSTEM), question])
+    return {"plan": plan.steps, "messages": [question], "revisions": 0}
 
 
 def agent(state: AgentState) -> dict:
@@ -119,20 +127,12 @@ def critic(state: AgentState) -> dict:
         "plan": state["plan"],
         "draft_answer": state["messages"][-1].text,
     }
-    critique = (
-        get_chat_model()
-        .with_structured_output(Critique)
-        .invoke(
-            [
-                ("system", _CRITIC_SYSTEM),
-                (
-                    "human",
-                    f"{json.dumps(review, indent=1)}\n\nRetrieved passages:\n\n"
-                    + (render_sources(list(sources.values())) or "(none: no tool returned passages)"),
-                ),
-            ]
-        )
+    passages = render_sources(list(sources.values())) or "(none: no tool returned passages)"
+    request = user_message(
+        f"{json.dumps(review, indent=1)}\n\nRetrieved passages:\n\n{passages}", state.get("images", [])
     )
+    reviewer = get_chat_model().with_structured_output(Critique)
+    critique = reviewer.invoke([SystemMessage(_CRITIC_SYSTEM), request])
     update: dict = {"critique": critique}
     if critique.verdict == "revise" and state["revisions"] < MAX_REVISIONS:
         issues = "\n".join(f"- {c}" for c in critique.unsupported_claims)

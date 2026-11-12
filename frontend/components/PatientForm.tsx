@@ -51,13 +51,32 @@ export function toPatient(f: PatientFields): Patient | null {
   return Object.keys(p).length ? p : null;
 }
 
+/** Short chips for what is known, e.g. ["67 y", "male", "eGFR 25", "meds: warfarin"]. */
+export function summarizePatient(f: PatientFields): string[] {
+  const out: string[] = [];
+  if (f.age) out.push(`${f.age} y`);
+  if (f.sex) out.push(f.sex);
+  if (f.weight_kg) out.push(`${f.weight_kg} kg`);
+  if (f.egfr) out.push(`eGFR ${f.egfr}`);
+  if (f.hepatic_impairment) out.push(`hepatic: ${f.hepatic_impairment}`);
+  if (f.pregnant) out.push(f.pregnant === "yes" ? "pregnant" : "not pregnant");
+  if (f.breastfeeding) out.push(f.breastfeeding === "yes" ? "breastfeeding" : "not breastfeeding");
+  const lists = [
+    ["conditions", f.conditions],
+    ["allergies", f.allergies],
+    ["meds", f.current_medications],
+  ] as const;
+  for (const [label, value] of lists) if (list(value).length) out.push(`${label}: ${list(value).join(", ")}`);
+  return out;
+}
+
 export const input =
-  "w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm focus:border-teal-600 focus:outline-none focus:ring-1 focus:ring-teal-600";
+  "w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-xs placeholder:text-slate-400 focus:border-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-600/20";
 
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <label className="block text-sm">
-      <span className="mb-1 block font-medium text-slate-700">
+      <span className="mb-1 block text-xs font-medium text-slate-600">
         {label} {hint && <span className="font-normal text-slate-500">{hint}</span>}
       </span>
       {children}
@@ -95,7 +114,9 @@ export function PatientForm({ value, onChange }: { value: PatientFields; onChang
   return (
     <fieldset className="space-y-3">
       <legend className="sr-only">Patient details</legend>
-      <p className="text-xs text-slate-500">Leave a field empty if unknown. Unknown is not treated as normal.</p>
+      <p className="text-xs text-slate-500">
+        Leave a field empty if unknown. Unknown is <em>not</em> treated as normal: the check will ask for it.
+      </p>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         <Field label="Age" hint="years">
           <input className={input} type="number" min={0} max={120} value={value.age} onChange={(e) => set("age")(e.target.value)} />
@@ -106,7 +127,7 @@ export function PatientForm({ value, onChange }: { value: PatientFields; onChang
         <Field label="Weight" hint="kg">
           <input className={input} type="number" min={1} max={400} step="any" value={value.weight_kg} onChange={(e) => set("weight_kg")(e.target.value)} />
         </Field>
-        <Field label="eGFR" hint="mL/min/1.73 m²">
+        <Field label="eGFR" hint="mL/min">
           <input className={input} type="number" min={0} max={200} step="any" value={value.egfr} onChange={(e) => set("egfr")(e.target.value)} />
         </Field>
         <Field label="Hepatic impairment">
