@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     openai_base_url: str | None = Field(
         None, validation_alias=AliasChoices("OPENAI_BASE_URL", "OPENAI_BASE_UR")
     )
-    openai_model: str = "gpt-4o-mini"
+    openai_model: str = "gpt-5.6-terra"
     openai_embedding_model: str = "text-embedding-3-small"
 
     corpus_dir: Path = PROJECT_ROOT / "corpus"

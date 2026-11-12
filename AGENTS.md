@@ -196,12 +196,14 @@ PharmaAssist/
 - [x] `/ponytail-review` (fixed: patient details from another tab were sent silently with Ask questions; favicon 404), commit.
 - Note: no JS unit-test runner (would be a new dependency); the markdown renderer is covered by the browser run only. Latency: Validate/Write take 1-2+ min (agent adds its own searches and critic revisions) — tune in Step 8 if needed.
 
-### Step 7 — Single-Container Docker Build (`Dockerfile`) *(NEXT)*
-- [ ] Write multi-stage `Dockerfile` (`node:22-alpine` → `python:3.12-slim` with `uv`).
-- [ ] Verify exact grader command: `docker build -t agent . && docker run -p 8000:8000 --env-file .env agent`, test `GET /health`, `POST /ask`, and UI on `http://localhost:8000`.
-- [ ] `/ponytail-review`, commit, wait for user approval.
+### Step 7 — Single-Container Docker Build (`Dockerfile`) *(DONE)*
+- [x] Multi-stage `Dockerfile`: `node:22.23.5-alpine3.24` (`npm ci` + `next build` → `/web/out`) → `python:3.12.16-slim-trixie` + `ghcr.io/astral-sh/uv:0.11.29` (`uv sync --frozen --no-dev --no-install-project`, `PYTHONPATH=/app/backend`). The repo layout is kept under `/app`, so `config.PROJECT_ROOT` still finds `corpus/`, `.cache/` and `frontend/out` (no path settings needed).
+- [x] Non-root user `app` (uid 1001) that can write only `/app/.cache`; `HEALTHCHECK` on `/health`; one uvicorn worker (in-memory index). No `.env`, `.agents/`, `tests/` or embedding cache in the image (`.dockerignore`). The cache is built at container start in the background (~15-25 s; `/health` is 200 meanwhile), so no API key is needed at build time.
+- [x] Verified with the exact grader command on Docker 28.5.1 and the real (quoted, `OPENAI_BASE_UR`-typo) `.env`: build ~67 s, image 748 MB; `/health` 200 after ~3 s, index ready ~14 s later; `POST /ask {"question": ...}` (eval Q1) → 200 in 10 s citing `dailymed-warfarin.md`; UI at `/`; the headless-Chrome run (Ask Q4 + Validate) passes with no console errors; container `healthy`; `docker stop` exits in ~1 s.
+- [x] `.env.example` updated (dropped the removed `MAX_REVISIONS`; default model `gpt-5.6-terra`, matching the user's change to `config.py`). README: run/develop commands.
+- [x] Lint, test, `/ponytail-review` (no Must fix; removed a `useradd --system` uid warning), commit.
 
-### Step 8 — Evaluation Harness, Whole-Repo Audit, Docs & Presentation
+### Step 8 — Evaluation Harness, Whole-Repo Audit, Docs & Presentation *(NEXT)*
 - [ ] Add `tests/eval/run_eval.py` (runs the 4 public questions + prescription scenarios, verifies expected source files and disclaimer, writes `eval_report.md`).
 - [ ] Run `/ponytail-audit` across the repository and fix any **Must fix** items.
 - [ ] Finalize `README.md`, `docs/PRESENTATION.md` (10-minute walkthrough guide), and the `walkthrough.md` artifact.
